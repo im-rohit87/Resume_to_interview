@@ -4,7 +4,11 @@ multer=require('multer'),nodemailer=require('nodemailer'),fs=require('fs'),path=
 const Anthropic=require('@anthropic-ai/sdk');
 const {JWT_SECRET='change-me',PORT=3000}=process.env;
 const APP_URL=process.env.APP_URL||`http://localhost:${PORT}`;
-fs.mkdirSync('uploads',{recursive:true});
+const uploadDir = '/tmp/uploads';
+
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
 const db=new Database('data.db');
 db.exec(`create table if not exists users(id integer primary key autoincrement,email text unique,name text,role text,pw text,
 status text,score integer,sched text,resume_text text,questions text,transcript text,ai_score integer,ai_feedback text,flags integer default 0,video text)`);
@@ -39,7 +43,12 @@ const TEST=[["What is the time complexity of binary search?",["O(n)","O(log n)",
 ["Which OSI layer handles routing?",["Transport","Network","Session","Data link"],1]];
 
 const app=express();app.use(express.json());app.use(express.static('public'));
-const up=multer({dest:'uploads/',limits:{fileSize:500*1024*1024}});
+const up = multer({
+    dest: uploadDir,
+    limits: {
+        fileSize: 500 * 1024 * 1024
+    }
+});
 const auth=role=>(req,res,next)=>{try{const t=(req.headers.authorization||'').slice(7)||req.query.t;
  const u=jwt.verify(t,JWT_SECRET);if(role&&u.role!==role)throw 0;req.u=u;next()}catch{res.status(401).json({error:'Unauthorized'})}};
 const get=id=>db.prepare('select * from users where id=?').get(id);
@@ -120,7 +129,12 @@ app.post('/api/interview/start',auth('candidate'),up.single('resume'),wrap(async
 app.post('/api/interview/finish',auth('candidate'),up.single('video'),wrap(async(req,res)=>{
  const c=get(req.u.id);
  if(c.status!=='scheduled'||!c.questions)return res.status(400).json({error:'Interview not started'});
- let vp=null;if(req.file){vp=req.file.path+'.webm';fs.renameSync(req.file.path,vp)}
+ let vp = null;
+
+if (req.file) {
+    vp = req.file.path + '.webm';
+    fs.renameSync(req.file.path, vp);
+}
  const answers=JSON.parse(req.body.answers||'[]'),qs=JSON.parse(c.questions);
  const tr=qs.map((q,i)=>`Q${i+1}: ${q}\nA: ${answers[i]||'(no answer)'}`).join('\n\n');
  let score=null,fb='AI evaluation unavailable (set ANTHROPIC_API_KEY).';
