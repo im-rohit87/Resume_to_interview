@@ -1,0 +1,82 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AI Interview Portal</title>
+<style>
+:root{--bg:#f5f6fb;--c:#fff;--t:#1b1f2a;--m:#667085;--a:#4f46e5;--b:#e2e4ee;--ok:#12805c;--bad:#c62828}
+@media(prefers-color-scheme:dark){:root{--bg:#12141c;--c:#1c1f2b;--t:#eef0f7;--m:#9aa1b5;--b:#2c3042;--a:#8b85ff;--ok:#4cc9a0;--bad:#ff7b7b}}
+body{margin:0;background:var(--bg);color:var(--t);font:15px/1.5 system-ui,sans-serif}
+.w{max-width:960px;margin:0 auto;padding:16px}.card{background:var(--c);border:1px solid var(--b);border-radius:12px;padding:18px;margin:12px 0}
+h1{font-size:20px;margin:0}h2{font-size:17px;margin:0 0 10px}.top{display:flex;justify-content:space-between;align-items:center}
+input,textarea{width:100%;padding:9px;border:1px solid var(--b);border-radius:8px;background:var(--bg);color:var(--t);font:inherit;margin:4px 0 10px;box-sizing:border-box}
+button{background:var(--a);color:#fff;border:0;border-radius:8px;padding:8px 14px;font:inherit;cursor:pointer}button.g{background:none;color:var(--a);border:1px solid var(--b)}
+.tw{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:14px}td,th{text-align:left;padding:8px;border-bottom:1px solid var(--b);vertical-align:top}
+.tag{padding:2px 8px;border-radius:99px;border:1px solid var(--b);font-size:12px}.m{color:var(--m);font-size:13px}.ok{color:var(--ok)}.bad{color:var(--bad)}
+label.o{display:block;padding:8px 10px;border:1px solid var(--b);border-radius:8px;margin:6px 0;cursor:pointer}label.o input{width:auto;margin:0 8px 0 0}
+video{width:100%;max-height:320px;background:#000;border-radius:10px}pre{white-space:pre-wrap;font:inherit}
+</style></head><body><div class="w" id="app"></div><script>
+let T=localStorage.t,R=localStorage.r;const $=i=>document.getElementById(i);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+async function api(p,o={}){const h={};if(T)h.Authorization='Bearer '+T;
+ if(o.json){h['Content-Type']='application/json';o.body=JSON.stringify(o.json)}
+ const r=await fetch('/api'+p,{...o,headers:h});const d=await r.json().catch(()=>({}));
+ if(r.status===401&&T&&p!=='/login')logout();if(!r.ok)throw new Error(d.error||'Request failed');return d}
+const bar=t=>`<div class="top"><h1>${t}</h1><button class="g" onclick="logout()">Logout</button></div>`;
+function logout(){localStorage.clear();T=R=null;render()}
+function render(){!T?login():R==='admin'?admin():cand()}
+function login(m=''){$('app').innerHTML=`<div class="card" style="max-width:380px;margin:60px auto"><h1>🤖 AI Interview Portal</h1><p class="m">Sign in with the credentials emailed to you.</p>
+<input id="e" placeholder="Email"><input id="p" type="password" placeholder="Password"><button onclick="doLogin()">Login</button><p class="bad">${esc(m)}</p></div>`}
+async function doLogin(){try{const d=await api('/login',{method:'POST',json:{email:$('e').value,password:$('p').value}});
+ T=localStorage.t=d.token;R=localStorage.r=d.role;render()}catch(e){login(e.message)}}
+
+/* ---------- ADMIN ---------- */
+async function admin(note=''){const L=await api('/admin/candidates');
+$('app').innerHTML=bar('Admin Dashboard')+`<div class="card"><h2>Invite candidate</h2><input id="n" placeholder="Full name"><input id="em" type="email" placeholder="Email">
+<button onclick="invite()">Create login &amp; email credentials</button><p class="ok">${note}</p></div>
+<div class="card"><h2>Candidates</h2><div class="tw"><table><tr><th>Candidate</th><th>Status</th><th>Test</th><th>Round 2</th><th>Review</th></tr>`+
+(L.map(c=>`<tr><td><b>${esc(c.name)}</b><br><span class="m">${esc(c.email)}</span></td><td><span class="tag">${c.status}</span></td><td>${c.score==null?'–':c.score+'/20'}</td>
+<td>${['selected','scheduled'].includes(c.status)?`<input type="datetime-local" id="s${c.id}" value="${c.sched||''}"><button onclick="sched(${c.id})">Schedule</button>`:esc((c.sched||'–').replace('T',' '))}</td>
+<td>${c.has_video?`<details><summary>AI score ${c.ai_score??'–'}/100 · tab switches ${c.flags}</summary>
+<video controls preload="none" src="/api/admin/candidates/${c.id}/video?t=${T}"></video><p><b>AI feedback:</b> ${esc(c.ai_feedback)}</p><pre>${esc(c.transcript)}</pre></details>
+${c.status==='interviewed'?`<button onclick="offer(${c.id})">Generate &amp; send offer letter</button>`:''}`:'–'}</td></tr>`).join('')||'<tr><td colspan="5" class="m">No candidates yet</td></tr>')+`</table></div></div>`}
+async function invite(){try{const d=await api('/admin/candidates',{method:'POST',json:{name:$('n').value,email:$('em').value}});
+ admin(d.emailed?'Credentials emailed.':`SMTP not set: password is <b>${d.password}</b> (also printed in server console).`)}catch(e){alert(e.message)}}
+async function sched(id){try{await api(`/admin/candidates/${id}/schedule`,{method:'POST',json:{when:$('s'+id).value}});admin('Interview scheduled and candidate notified.')}catch(e){alert(e.message)}}
+async function offer(id){if(!confirm('Send AI-generated offer letter to this candidate?'))return;
+ try{const d=await api(`/admin/candidates/${id}/offer`,{method:'POST'});admin(d.sent?'Offer letter emailed.':'Offer letter generated (SMTP not set; see server console).');console.log(d.letter)}catch(e){alert(e.message)}}
+
+/* ---------- CANDIDATE ---------- */
+async function cand(){const c=await api('/me');const s=c.status;let h=bar('Hi, '+esc(c.name));
+if(s==='invited')return test(h);
+if(s==='failed')h+=`<div class="card"><h2 class="bad">Score: ${c.score}/20</h2><p>You did not reach the qualifying score (16+). Thank you for applying.</p></div>`;
+else if(s==='selected')h+=`<div class="card"><h2 class="ok">Score: ${c.score}/20 – Selected 🎉</h2><p>You qualified for the next round. You will be emailed once the interview is scheduled.</p></div>`;
+else if(s==='scheduled')h+=`<div class="card"><h2>Round 2: AI video interview</h2><p>Scheduled: <b>${esc(c.sched.replace('T',' '))}</b></p>
+<p class="m">Your camera and microphone are recorded during the interview. Switching tabs is logged and pasting is disabled.</p>
+<label>Upload resume (PDF/TXT)</label><input type="file" id="rs" accept=".pdf,.txt"><button onclick="startInt()">Start interview</button></div>`;
+else h+=`<div class="card"><h2 class="ok">${s==='offered'?'Offer sent! Check your email 🎉':'Interview submitted'}</h2><p>${s==='offered'?'Congratulations!':'Your recording is under review. You will be notified by email.'}</p></div>`;
+$('app').innerHTML=h}
+async function test(h){const Q=await api('/test');
+$('app').innerHTML=h+`<div class="card"><h2>Round 1: Test (20 marks)</h2><p class="m">10 questions × 2 marks. Score above 15 to qualify.</p>`+
+Q.map((q,i)=>`<p><b>${i+1}. ${esc(q.q)}</b></p>`+q.options.map((o,j)=>`<label class="o"><input type="radio" name="q${i}" value="${j}">${esc(o)}</label>`).join('')).join('')+
+`<button onclick="submitTest(${Q.length})">Submit</button></div>`}
+async function submitTest(n){const a=[];for(let i=0;i<n;i++){const r=document.querySelector(`input[name=q${i}]:checked`);a.push(r?+r.value:-1)}
+ try{await api('/test',{method:'POST',json:{answers:a}});cand()}catch(e){alert(e.message)}}
+
+let QS,qi,A,flags,rec,ch,stream;const vis=()=>{if(document.hidden)flags++};
+async function startInt(){const f=$('rs').files[0];if(!f)return alert('Upload your resume first');
+ try{stream=await navigator.mediaDevices.getUserMedia({video:true,audio:true})}catch{return alert('Camera and microphone access are required.')}
+ const fd=new FormData();fd.append('resume',f);
+ try{QS=(await api('/interview/start',{method:'POST',body:fd})).questions}catch(e){stream.getTracks().forEach(t=>t.stop());return alert(e.message)}
+ qi=0;A=[];flags=0;ch=[];rec=new MediaRecorder(stream);rec.ondataavailable=e=>e.data.size&&ch.push(e.data);rec.start(1000);
+ document.addEventListener('visibilitychange',vis);
+ $('app').innerHTML=`<div class="card"><video id="v" autoplay muted playsinline></video><p class="m bad">● Recording</p><h2 id="qt"></h2>
+ <textarea id="a" rows="5" placeholder="Type your answer" onpaste="return false"></textarea><button class="g" onclick="dict()">🎤 Dictate</button> <button id="nb" onclick="next()">Next</button></div>`;
+ $('v').srcObject=stream;ask()}
+function ask(){$('qt').textContent=`Q${qi+1}/${QS.length}: ${QS[qi]}`;$('a').value='';
+ speechSynthesis.cancel();speechSynthesis.speak(new SpeechSynthesisUtterance(QS[qi]));if(qi===QS.length-1)$('nb').textContent='Finish'}
+function dict(){const S=window.SpeechRecognition||window.webkitSpeechRecognition;if(!S)return alert('Dictation not supported in this browser');
+ const r=new S();r.onresult=e=>$('a').value+=' '+e.results[0][0].transcript;r.start()}
+function next(){A.push($('a').value.trim());if(++qi<QS.length)return ask();
+ document.removeEventListener('visibilitychange',vis);
+ rec.onstop=async()=>{stream.getTracks().forEach(t=>t.stop());$('app').innerHTML='<div class="card">Uploading your recording… please wait.</div>';
+  const fd=new FormData();fd.append('video',new Blob(ch,{type:'video/webm'}),'interview.webm');fd.append('answers',JSON.stringify(A));fd.append('flags',flags);
+  try{await api('/interview/finish',{method:'POST',body:fd})}catch(e){alert(e.message)}cand()};rec.stop()}
+render();
+</script></body></html>
